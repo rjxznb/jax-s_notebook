@@ -1,4 +1,5 @@
 #pragma once
+// 简单工厂模式，这里通过计算器的例子来说明，Operator为基类，有一个纯虚函数，其余子类都实现了该函数，最后通过一个类来通过父类指针构造子类实例对象；
 class Operator {
 protected:
     int a;
@@ -65,3 +66,9 @@ public:
         return p;
     }
 };
+
+ //int main() {
+ //    Easy_Factory f;
+ //    auto op = f.Choose_Operation('+', 1, 2);
+ //    cout << op->Compute();
+ //}
