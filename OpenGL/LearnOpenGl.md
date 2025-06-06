@@ -214,7 +214,7 @@ glBufferData是一个专门用来把用户定义的数据复制到当前绑定�
 
 ```glsl
 #version 330 core
-layout (location = 0) in vec3 aPos;
+layout (location = 0) in vec3 aPos; // location=0表示
 
 void main()
 {
@@ -223,7 +223,7 @@ void main()
 ```
 
 - 每个着色器都起始于一个版本声明，opengl3.3对应330，之后core表示为profile core模式；
-- **使用`in`关键字，在顶点着色器中声明所有的输入顶点属性(Input Vertex Attribute)，这里只声明了一个顶点属性，就是三维坐标，**GLSL有一个向量数据类型，他包含**1到4个`float`分量，包含的数量可以从他的后缀数字看出来，**在GLSL中一个向量有最多4个分量，每个分量值都代表空间中的一个坐标，他们**可以通过`vec.x`、`vec.y`、`vec.z`和`vec.w`（注意`vec.w`分量不是用作表达空间中的位置的，而是齐次坐标表示点的一种方式）来获取；**我们同样也**通过`layout (location = 0)`设定了输入变量的位置值(Location)你后面会看到为什么我们会需要这个位置值；**
+- **使用`in`关键字，在顶点着色器中声明所有的输入顶点属性(Input Vertex Attribute)，这里只声明了一个顶点属性，就是三维坐标，**GLSL有一个向量数据类型，他包含**1到4个`float`分量，包含的数量可以从他的后缀数字看出来，**在GLSL中一个向量有最多4个分量，每个分量值都代表空间中的一个坐标，他们**可以通过`vec.x`、`vec.y`、`vec.z`和`vec.w`（注意`vec.w`分量不是用作表达空间中的位置的，而是齐次坐标表示点的一种方式）来获取，**并且**通过`layout (location = 0)`设定了输入变量（属性）的位置值(Location)，`layout` 关键字用于指定该属性在输入的缓冲区对象中的存储位置或布局，注意：这里设置的位置值只是我们自行设定而已，和字节对齐无关，他的作用就是在后面设置顶点属性的时候传入`glVertexAttribPointer`函数对应的属性位置的，从而让着色器知道哪个location的属性是对应的属性；**
 - 为了设置顶点着色器的输出，我们必须把位置数据赋值给预定义的gl_Position变量，他在幕后是`vec4`类型的；在main函数的最后，我们将gl_Position设置的值会成为该顶点着色器的输出。由于我们的输入是一个3分量的向量，我们必须把它转换为4分量的。我们可以把`vec3`的数据作为`vec4`构造器的参数，同时由于我们表示的是一个点而不是向量，所以把`w`分量设置为`1.0f`；
 
 #### 1.2.3.2 编译顶点着色器
@@ -271,27 +271,87 @@ if(!success)
 
 ### 1.2.4 片段着色器fragment shader
 
+片段着色器所做的是计算像素最后的颜色输出。为了让事情更简单，我们的片段着色器将会一直输出橘黄色。
 
+在计算机图形中颜色被表示为有**4个元素的数组：红色、绿色、蓝色和alpha(透明度)分量，通常缩写为RGBA，**当在OpenGL或GLSL中定义一个颜色的时候，我们把颜色**每个分量的强度设置在0.0到1.0之间，**比如：说我们设置红为1.0f，绿为1.0f，我们会得到两个颜色的混合色，即黄色；
 
+```cpp
+#version 330 core
+out vec4 FragColor
+void main(){
+    FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);
+}
+```
 
+**片段着色器只需要一个输出变量，**这个变量是一个**4分量向量，**他表示的是**最终的输出颜色，**我们应该自己将其计算出来，**声明输出变量可以使用`out`关键字：**
 
+之后采用和定义以及编译 vertex_shader 同样的方式来定义以及编译fragment shader对象；
 
+### 1.2.5 链接为着色器程序
 
+着色器程序对象(Shader Program Object)是**多个着色器合并之后并最终链接完成的版本，**如果要使用刚才编译的着色器我们必须**把他们链接(Link)为一个着色器程序对象，**然后在**渲染对象的时候激活这个着色器程序，已激活着色器程序的着色器将在我们发送渲染调用的时候被使用，**当链接着色器至一个程序的时候，他会**把每个着色器的输出链接到下个着色器的输入，当输出和输入不匹配的时候，你会得到一个连接错误；**
 
+创建以及链接着色器程序的方式和前面类似：
 
+```cpp
+// 初始化并启动着色程序，就是链接起两个着色器.o文件，之后启动；
+bool start_shader_program(unsigned int& shaderProgram, unsigned int vertexshader, unsigned int fragshader) {
+	shaderProgram = glCreateProgram(); // 创建着色器程序对象；
+	glAttachShader(shaderProgram, vertexshader); // 将顶点着色器附加到着色程序上；
+	glAttachShader(shaderProgram, fragshader); // 将片段着色器附加到着色程序上；
+	glLinkProgram(shaderProgram); // 将编译后的着色程序链接到本程序；
 
+	glUseProgram(shaderProgram); // 激活这个程序对象
+	glDeleteShader(vertexshader); // 启动着色器程序之后就可以删除两个着色器对象啦；
+	glDeleteShader(fragshader);
 
+	// 查看是否链接成功；
+	int success;
+	char infolog[512];
+	glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+	if (!success) {
+		glGetProgramInfoLog(shaderProgram, 512, NULL, infolog);
+		std::cout << "Vertex Shader Compile Error: " << infolog << std::endl;
+		return false;
+	}
+	return true;
+}
+```
 
+### 1.2.6 链接顶点属性
 
+顶点着色器允许我们指定任何形式的顶点属性输入，我们**必须手动指定输入数据的哪一个部分对应顶点着色器的哪一个顶点属性，**由于我们的例子**只有三维坐标，**所以顶点缓冲数据会被解析为下面这样子：
 
+<img src="F:\VS\jax-s_notebook\笔记图片\vertex_attribute_pointer.png" style="zoom:80%;" />
 
+- 位置数据被储存为32位（4字节）浮点值。
+- 每个位置包含3个这样的值。
+- 在这3个值之间没有空隙（或其他值）。这几个值在数组中紧密排列(Tightly Packed)。
+- 数据中第一个值在缓冲开始的位置。
 
+有了这些信息我们就可以**使用 `glVertexAttribPointer`函数 告诉OpenGL该如何解析顶点数据：**我们需要**对顶点的每一个输入属性都调用一遍该函数，但是我们这里只有一个输入，所以只需要调用一次就好啦；**
 
+```cpp
+getVertexAttribPointer(0, 3, GL_FLOAT, 3*sizeof(float), (void*)0);
+```
 
+- 第一个参数指定我们要配置的顶点属性是哪个location，还记得我们**在顶点着色器中使用`layout(location = 0)`定义了 `aPos`顶点属性，他可以把该顶点属性的位置值设置为`0`，因为我们希望把数据传递到这一个顶点属性中，所以这里我们传入`0`；**
+- 第二个参数指定**顶点属性的大小，顶点属性是一个`vec3`，他由3个值组成，所以大小是3；**
+- 第三个参数指定**数据的类型，**这里是GL_FLOAT(GLSL中`vec*`都是由浮点数值组成的)；
+- 下个参数定义我们**是否希望数据被标准化(Normalize)；**如果我们**设置为GL_TRUE，所有数据都会被映射到0（对于有符号型signed数据是-1）到1之间，**我们把他设置为GL_FALSE，因为我们本身设置的就是-1，1之间标准化后的数据；
+- 第五个参数叫做步长(Stride)，他告诉我们在连续的顶点属性组之间的间隔；由于下组aPos属性在3个`float`之后，我们把步长设置为`3 * sizeof(float)`；要注意的是由于我们知道这个**数组是紧密排列的（在两个顶点属性之间没有空隙）我们也可以设置为0来让OpenGL计算具体步长是多少（只有当数值是紧密排列时才可用，因为一个顶点的属性都是相同的，所以字节大小也相同，直接跳过一个顶点的全部属性表示的字节数就是下个顶点的该属性的起始字节位置）；**
+- 最后一个参数的类型是`void*`，所以需要我们进行这个奇怪的强制类型转换，他表示**aPos属性在缓冲中起始位置的偏移量(Offset)，由于位置数据在数组的开头，所以这里是0；**
 
+**每个顶点属性从一个VBO管理的内存中获得他的数据，而具体是从哪个VBO（程序中可以有多个VBO）获取则是通过在调用`glVertexAttribPointer`时绑定到 `GL_ARRAY_BUFFER`的VBO决定的，**由于在调用 `glVertexAttribPointer`之前绑定的是先前定义的VBO对象，顶点属性`0`现在会链接到他的顶点数据；
 
+前面的操作是定义好了一个属性指针对象，也就是告诉OpenGL该如何解析顶点数据，我们现在应该**使用 `glEnableVertexAttribArray`函数，以每个顶点属性的location位置值作为参数，启用顶点属性，因为顶点属性默认是禁用的，如果不启动就无法使用，之后就可以渲染啦：**
 
+```cpp
+// 启用位置0的顶点属性；
+glEnableVertexAttribArray(0);
+```
 
+但是又会产生一个问题，因为我们需要为每一个顶点的每一个属性都绑定上一个属性指针，那么此时就会很麻烦，如果有超过5个顶点属性，上百个不同物体就会很麻烦，有没有一些方法可以使我们把所有这些状态配置储存在一个对象中，并且可以通过绑定这个对象来恢复状态呢？
 
 
 

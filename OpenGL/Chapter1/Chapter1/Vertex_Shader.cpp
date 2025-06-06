@@ -1,7 +1,7 @@
 #include<iostream>
 #include<glad/glad.h>
 
-// 顶点着色器硬编码
+// 顶点着色器硬编码，输入只有一个3维向量aPos，输出三维齐次坐标表示的顶点，就是一个四维的向量表示gl_Postion到片段着色器，作为他的输入；
 const char* vertexShaderSource = "#version 330 core\n"
 	"layout (location = 0) in vec3 aPos;\n"
 	"void main(){\n"
@@ -23,4 +23,12 @@ bool initShader(unsigned int& vertexShader) {
 		return false;
 	}
 	return true;
+}
+
+// 链接哪个顶点属性并启用该属性；
+void SetVertexAttrib(int location) {
+	// 定义好属性指针；
+	glVertexAttribPointer(location, 3, GL_FLOAT, GL_FALSE, 3*sizeof(float), (void*)0);
+	// 启用该位置的属性；
+	glEnableVertexAttribArray(location);
 }
