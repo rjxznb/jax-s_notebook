@@ -154,7 +154,7 @@ glClear(GL_COLOR_BUFFER_BIT); // 清空缓冲区，我们这里指定为颜色�
 - 第五个阶段为片段着色器阶段：主要目的是**计算一个像素的最终颜色，**通常，**片段着色器包含3D场景的数据（比如光照、阴影、光的颜色等等），这些数据可以被用来计算最终像素的颜色；**
 - 最后一个阶段叫做**Alpha测试和混合(Blending)阶段：这个阶段检测片段的对应的深度（和模板(Stencil)）值，**用他们来判断**这个像素是其他物体的前面还是后面，决定是否应该丢弃、。**这个阶段**也会检查alpha值（alpha值定义了一个物体的透明度）并对物体进行混合(Blend)，**所以，即使在片段着色器中计算出来了一个像素输出的颜色，在渲染多个三角形的时候最后的像素颜色也可能完全不同；
 
-### 1.2.2 顶点输入
+### 1.2.2 顶点输入（顶点缓冲区对象 VBO）
 
 OpenGL不是简单地把**所有的**3D坐标变换为屏幕上的2D像素；**OpenGL仅当3D坐标在3个轴（x、y和z）上-1.0到1.0的范围内时才处理他，**所有在这个范围内的坐标叫做**标准化设备坐标(Normalized Device Coordinates)，**如果一个顶点的 x、y 或 z 坐标超出了这个范围（-1.0 到 1.0），那么他会被裁剪掉，相关的片段（像素）不会被渲染到屏幕上，而**-1.0 - 1.0被称为裁剪空间，裁剪空间的作用就是便于投影计算；**
 
@@ -351,11 +351,125 @@ getVertexAttribPointer(0, 3, GL_FLOAT, 3*sizeof(float), (void*)0);
 glEnableVertexAttribArray(0);
 ```
 
-但是又会产生一个问题，因为我们需要为每一个顶点的每一个属性都绑定上一个属性指针，那么此时就会很麻烦，如果有超过5个顶点属性，上百个不同物体就会很麻烦，有没有一些方法可以使我们把所有这些状态配置储存在一个对象中，并且可以通过绑定这个对象来恢复状态呢？
+但是又会产生一个问题，因为我们需要为每一个顶点的每一个属性都绑定上一个属性指针，那么此时就会很麻烦，如果有超过5个顶点属性，上百个不同物体就会很麻烦，有没有一些方法可以使我们**把所有这些状态配置储存在一个对象中，并且可以通过绑定这个对象来恢复状态呢？**
+
+那就是通过顶点数组对象(Vertex Array Object, VAO)啦；
+
+### 1.2.7 顶点数组对象 VAO
+
+顶点数组对象(Vertex Array Object, VAO)可以像顶点缓冲对象那样被绑定，**任何随后的顶点属性调用都会储存在这个VAO中；**当配置顶点属性指针时，你只需要将那些调用执行一次，之后再绘制物体的时候只需要绑定相应的VAO就行了。这使**在不同顶点数据和属性配置之间切换变得非常简单，**只需要绑定不同的VAO就行了：
+
+**注意：**OpenGL的核心模式**要求**我们使用VAO，所以他知道该如何处理我们的顶点输入，如果我们**绑定VAO失败，OpenGL会拒绝绘制任何东西；**
+
+一个顶点数组对象会储存以下这些内容：
+
+- glEnableVertexAttribArray和glDisableVertexAttribArray的调用。
+- 通过glVertexAttribPointer设置的**顶点属性配置；**
+- 通过glVertexAttribPointer调用与顶点属性关联的**顶点缓冲对象；**
+
+如下图所示：
+
+<img src="F:\VS\jax-s_notebook\笔记图片\vertex_array_objects.png" style="zoom: 80%;" />
+
+代码流程如下所示：
+
+```cpp
+// 创建顶点缓冲区数组对象；
+unsigned int VAO;
+glGenVertexArrays(1, &VAO);
+
+// 绑定VAO到上下文对象；
+glBindVertexArray(VAO);
+
+// 创建顶点缓冲对象VBO，并将顶点数组vertices存入该缓冲对象VBO；
+// 顶点数组：这里只有xyz坐标属性，这个数组中有三个顶点；
+float vertices[]{ -0.5f, -0.5f, 0.0f,
+					0.5f, -0.5f, 0.0f,
+					0.0f, 0.5f, 0.0f,
+				};
+unsigned int VBO;
+glGenBuffers(1, &VBO);
+glBindBuffer(GL_ARRAY_BUFFER, VBO);
+glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+// 设置顶点属性指针：
+glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0); // 这是大坑，这个函数名一定要对，不是glVertexAttribIPointer，在pointer之前没有I；
+glEnableVertexAttribArray(0);
+
+// 设置完之后将VAO和VBO脱离上下文对象；
+glBindBuffer(GL_ARRAY_BUFFER, 0);
+glBindVertexArray(0);
+
+// render loop：
+while (!glfwWindowShouldClose(window)) {
+    ...
+    // 绘制：
+    start_shader_program(shader_program); // 启动着色器程序；
+    glBindVertexArray(VAO); // 绑定VAO就好啦，因为vao里面有属性pointer，有vbo；
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    ...
+}
+
+// 释放对象；
+glDeleteVertexArrays(1, &VAO);
+glDeleteBuffers(1, &VBO);
+glDeleteProgram(shader_program);
+```
+
+### 1.2.8 绘制图元
+
+要想绘制我们想要的物体，OpenGL给我们**提供了glDrawArrays函数，**他使用当前激活的着色器，之前定义的顶点属性配置，和VBO的顶点数据（通过VAO间接绑定）来绘制图元：
+
+```cpp
+glDrawArrays(GL_TRIANGLES, 0, 3);
+```
+
+glDrawArrays函数**第一个参数是我们打算绘制的OpenGL图元的类型，这里传递GL_TRIANGLES表示画三角形；**第二个参数指定了**顶点数组的起始索引，**我们这里填`0`，最后一个参数指定我们打算**绘制多少个顶点，这里是`3`（我们只从我们的数据中渲染一个三角形，他只有3个顶点长）；**
+
+### 1.2.9 元素缓冲对象
 
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# glsl教程
+
+GLSL 是一种面向过程的编程语言，有着与 C 语言类似的语法，但没有 C 语言复杂的指针概念。 常用基本的类型如下：
+
+类型	说明
+void	空类型,即不返回任何值
+bool	布尔类型 true,false
+int	带符号的整数 signed integer
+float	带符号的浮点数 floating scalar
+vec2, vec3, vec4	n维浮点数向量 n-component floating point vector
+bvec2, bvec3, bvec4	n维布尔向量 Boolean vector
+ivec2, ivec3, ivec4	n维整数向量 signed integer vector
+mat2, mat3, mat4	2x2, 3x3, 4x4 浮点数矩阵 float matrix
+sampler2D	2D纹理 a 2D texture
+samplerCube	盒纹理 cube mapped texture
+
+
+
+gl_Position 、 gl_FragColor 等这些以 gl_ 开头的变量都是内置变量，通过给这些特殊的变量赋值，可以完成与硬件的通讯。
 
 
 
@@ -387,3 +501,29 @@ perspective Projection
 
 视图变换view transformation，模型视图变换model view 移动相机到原点
 3d->2d orthographic projection and perspective projection正交不会近大远小用于工程制图和透视投影用于人眼，正交投影就是从摄像机射出的所有投影的线都是平行的，而透视投影则是从一个点做切线进行投影
+
+投影通过计算出观测矩阵（如何进行变换，就是一个齐次坐标矩阵）得到模型视图变换后的坐标，这个坐标就是标准坐标系下的坐标，也就是三个轴坐标范围在-1到1
+
+mvp：model view projection model对应移动相机位置，view对应调整相机角度，projection对应将物体投影到-1，1
+
+像素：pixel是picture element的简称，他是屏幕的最小单位，一个像素内部的颜色都是一致的；
+rasterlization：光栅化在德语是屏幕的意思，所以就表示将投影后的图像画到屏幕上
+屏幕坐标系：屏幕左下角是原点，向上为y正方向，向右为x正方向
+opengl三维坐标系遵循左手系
+
+视口变换：从3维-1到1的标准坐标系坐标放缩投射到2维屏幕上
+
+显示在屏幕上的就是显存中的一块缓冲区数据：
+
+<img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250608104633.png" style="zoom:50%;" />
+
+光栅化最简单的方法：采样；采样的含义：sampling a function就是将1到100这些密集的点都输入到函数之后离散化为不同的结果
+
+<img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250608104702.png" style="zoom:50%;" />
+
+<img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250608104707.png" style="zoom:50%;" />
+
+如何判断一个像素中点是否在三角形内部？用叉积；
+
+
+
