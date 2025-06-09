@@ -432,44 +432,306 @@ glDrawArrays函数**第一个参数是我们打算绘制的OpenGL图元的类型
 
 
 
+## 1.3 着色器Shader
+### 1.3.1 glsl
+着色器是使用一种叫GLSL的类C语言写成的；着色器的开头总是要声明版本，接着是输入和输出变量、uniform和main函数。每个着色器的入口点都是main函数，在这个函数中我们处理所有的输入变量，并将结果输出到输出变量中；
+一般着色器的结构如下所示：每个着色器使用这两个关键字设定输入和输出，只要**前一个着色器的输出变量与下一个着色器阶段的输入变量匹配，**他就会传递下去：
+```glsl
+#version number core
+layout(location = 0) in type var1; # 前面的layout()可省略；
+layout(location = 1) in type var2;
+...
+out type var3;
 
+uniform var4;
 
+void main(){
+    ...
+    var3 = xxx; # var3是输出变量；
+}
+```
+我们也**可以忽略layout (location = 0)标识符，通过在OpenGL代码中使用`glGetAttribLocation`查询属性位置值(Location)，**但是会增加我们自己的工作量；
 
+如果我们打算从一个着色器向另一个着色器发送数据，我们必须在发送方着色器中声明一个输出，在接收方着色器中声明一个类似的输入，当**类型和名字都一样**的时候，OpenGL就会**把两个变量链接到一起，**他们之间就能发送数据了（这是在链接程序对象时完成的）；
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# glsl教程
-
-GLSL 是一种面向过程的编程语言，有着与 C 语言类似的语法，但没有 C 语言复杂的指针概念。 常用基本的类型如下：
-
+#### 1.3.1.1 数据类型
+（1）基础类型：
 类型	说明
 void	空类型,即不返回任何值
 bool	布尔类型 true,false
 int	带符号的整数 signed integer
 float	带符号的浮点数 floating scalar
-vec2, vec3, vec4	n维浮点数向量 n-component floating point vector
-bvec2, bvec3, bvec4	n维布尔向量 Boolean vector
-ivec2, ivec3, ivec4	n维整数向量 signed integer vector
-mat2, mat3, mat4	2x2, 3x3, 4x4 浮点数矩阵 float matrix
-sampler2D	2D纹理 a 2D texture
-samplerCube	盒纹理 cube mapped texture
+
+（2）容器类型：
+- 向量：
+    - vecn	包含n个float分量的默认向量
+    - bvecn	包含n个bool分量的向量
+    - ivecn	包含n个int分量的向量
+    - uvecn	包含n个unsigned int分量的向量
+    - dvecn	包含n个double分量的向量
+
+一个向量的分量可以通过vec.x这种方式获取，这里x是指这个向量的第一个分量，使用.x、.y、.z和.w来获取他们的第1、2、3、4个分量。GLSL也允许你对颜色使用rgba，或是对纹理坐标使用stpq访问相同的分量；`vec.x==vec.r==vec.s`都是获取向量的第一个分量；
+
+向量这一数据类型也允许一些有趣而灵活的分量选择方式，叫做**重组(Swizzling)，**重组允许这样的语法：
+```glsl
+vec2 someVec;
+vec4 differentVec = someVec.xyxx;
+vec3 anotherVec = differentVec.zyw;
+vec4 otherVec = someVec.xxxx + anotherVec.yxzy;
+vec4 V = vec4(anotherVec, 1.0);
+```
+你可以**使用上面4个字母任意组合来创建一个和原来向量一样长的（同类型）新向量，**只要原来向量有那些分量即可，我们也可以**把一个向量作为一个参数传给不同的向量构造函数，**以减少需求参数的数量；
+
+
+- 矩阵：
+    - mat2, mat3, mat4	2x2, 3x3, 4x4 浮点数矩阵 float matrix
+
+- 纹理：
+    - sampler2D	2D纹理 a 2D texture
+    - samplerCube	盒纹理 cube mapped texture
+
+#### 1.3.1.2 uniform全局变量
+Uniform是另一种从我们的**应用程序在 CPU 上传递数据到 GPU 上的着色器**的方式，但uniform和顶点属性有些不同；**首先，uniform是全局的(Global)，**他可以被着色器程序的任意着色器在任意阶段访问，并且每一个着色器访问的都是同一个地址的uniform变量；
+
+其中 gl_Position 、 gl_FragColor 等这些**以 gl_ 开头的变量都是内置变量，通过给这些特殊的变量赋值，可以完成与硬件的通讯；**
+
+下面我们用过uniform变量来实现通过代码来传入片段着色器颜色变量：
+```glsl
+#version 330 core
+out vec4 FragColor; // 在代码中设置该变量的值；
+uniform vec4 color;
+
+void main(){
+    FragColor = color;
+}
+```
+如果**声明了一个uniform却在GLSL代码中没用过，编译器会静默移除这个变量，**导致最后编译出的版本中并不会包含他，这可能导致几个非常麻烦的错误，记住这点！
+下面我们在代码中对这个uniform变量赋值：
+```cpp
+time_t t;
+time(&t); // float t = glfwGetTime(); 或者替换为该函数获取程序运行的秒数；
+float green_color = sin() / 2.0f + 0.5f; // 通过时间来改变绿色的颜色值；
+int vertexColorLocation = glGetUniformLocation(shaderProgram, "vertexColor"); // 获取uniform变量的位置值；
+glUseProgram(shaderProgram);
+glUniform4f(vertexColorLocation, 0.0f, green_color, 0.0f, 1.0f); // 在代码中设置着色器中的uniform变量值；
+```
+我们首先用 `glGetUniformLocation` 查询 `uniform vertexColor` 的位置值，如果 `glGetUniformLocation` 返回-1就代表没有找到这个位置值，最后，我们可以通过 `glUniform4f` 函数设置vec4类型的 uniform变量值；
+
+**注意：查询uniform地址不要求你之前使用过着色器程序，但是更新一个uniform之前你必须先使用程序(调用`glUseProgram`)，**因为他是在当前激活的着色器程序中设置uniform的；
+
+opengl的函数有一个共同的特性，因为他是基于C开发的，所以他的函数并不支持重载，所以就通过一个特定的后缀，标识该函数处理变量的类型，比如glUniform4f，4f就表示设定的uniform的类型为4个float类型的变量（我们也可以使用fv版本，也就是vector向量），所有可能的后缀包括：
+- f	函数需要一个float作为他的值
+- i	函数需要一个int作为他的值
+- ui	函数需要一个unsigned int作为他的值
+- 3f	函数需要3个float作为他的值
+- fv	函数需要一个float向量/数组作为他的值
+
+### 1.3.1.3 为顶点引入更多属性
+前面我们只学习了顶点存在一个vec3类型的坐标属性是如何在程序中链接顶点属性的，下面介绍如果设置多个属性；在这里我们通过为每个顶点引入坐标和颜色属性来举例：
+```cpp
+float vertices[]{
+        // 位置              // 颜色
+     0.5f, -0.5f, 0.0f,  1.0f, 0.0f, 0.0f,   // 右下
+    -0.5f, -0.5f, 0.0f,  0.0f, 1.0f, 0.0f,   // 左下
+     0.0f,  0.5f, 0.0f,  0.0f, 0.0f, 1.0f    // 顶部
+}
+```
+下图为顶点数组的布局：
+<img src="F:\VS\jax-s_notebook\笔记图片\vertex_attribute_pointer_interleaved.png" style="zoom:80%;" />
+```glsl
+// vertex shader
+#version 330 core
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aColor;
+
+out vec3 ourColor; // 输出到fragment shader
+
+void main(){
+    gl_Position = vec3(aPos, 1.0f);
+    ourColor = aColor; // 将ourColor设置为我们从顶点数据那里得到的输入颜色
+}
+
+// fragment shader
+#version 330 core
+in vec3 ourColor;
+
+out vec4 FragColor; // 输出到fragment shader
+
+void main(){
+    FragColor = vec4(ourColor, 1.0f); // 将ourColor设置为我们从顶点数据那里得到的输入颜色
+}
+```
+下面就要链接起来各属性啦：
+```cpp
+// 坐标属性
+glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0); // 步长为6个float；
+glEnableVertexAttribArray(0);
+// 颜色属性
+glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)3*sizeof(float)); // 步长为6个float，并且起始偏移量为3*sizeof(float)；
+glEnableVertexAttribArray(1); 
+```
+<img src="F:\VS\jax-s_notebook\笔记图片\shaders3.png" style="zoom:80%;" />
+我们为三个顶点设置了三个颜色，但是渲染出来的效果并不是每一个顶点周围的颜色都是纯色的，这是在片段着色器中进行的所谓**片段插值(Fragment Interpolation)的结果；**也就是在光栅化的时候，最小单位是像素而不是顶点，所以一个三角形内有很多像素，那么这时候就通过插值计算的方式计算出处于顶点中间位置的像素他的颜色值，比如说，我们有一个线段，上面的顶点是绿色的，下面的顶点是蓝色的，如果一个片段着色器渲染一个位于线段70%位置的像素，他的颜色输入属性就会是30%蓝 + 70%绿；
+
+## 1.4 纹理
+如果想让图形看起来更真实，我们就必须有足够多的顶点，从而指定足够多的颜色，这将会产生很多额外开销，因为每个模型都会需求更多的顶点；
+所以我们就可以通过使用纹理(texture)来解决这个问题，**纹理是一个2D图片（甚至也有1D和3D的纹理），**他可以用来添加物体的细节；除了图像以外，**纹理也可以被用来储存大量的数据，这些数据可以发送到着色器上；**
+
+假设此时我们有一个纹理图片：
+<img src="F:\VS\jax-s_notebook\笔记图片\wall.png" style="zoom:80%;" />
+为了能够**把纹理映射(Map)到三角形上，**我们需要**指定三角形的每个顶点各自对应纹理的哪个部分，**这样**每个顶点就会关联着一个纹理坐标(Texture Coordinate)，**用来标明该**从纹理图像的哪个部分采样；**
+
+**纹理坐标在x和y轴上，范围为0到1之间（注意我们使用的是2D纹理图像），使用纹理坐标获取纹理颜色叫做采样(Sampling)，**纹理坐标起始于(0, 0)，也就是纹理图片的左下角，终止于(1, 1)，即纹理图片的右上角。下面的图片展示了我们是如何把纹理坐标映射到三角形上的：我们为三角形的三个顶点分别指定了1个纹理坐标点；
+<img src="F:\VS\jax-s_notebook\笔记图片\tex_coords.png" style="zoom:80%;" />
+我们希望三角形的左下角对应纹理的左下角，因此我们**把三角形左下角顶点的纹理坐标设置为(0, 0)；**同理右下方的顶点设置为(1, 0)；三角形的上顶点对应于图片的上中位置所以我们把它的纹理坐标设置为(0.5, 1.0)；纹理坐标看起来就像这样：
+```cpp
+float texCoords[] = {
+    0.0f, 0.0f, // 左下角
+    1.0f, 0.0f, // 右下角
+    0.5f, 1.0f  // 上中
+};
+```
+
+### 1.4.1 纹理环绕方式(Texture Wrapping)
+纹理坐标的范围通常是从(0, 0)到(1, 1)，那如果我们把顶点的纹理坐标设置在范围之外会发生什么，OpenGL默认的行为是重复这个纹理图像（类似于对1取余），但OpenGL提供了更多的选择：
+环绕方式	
+- GL_REPEAT	对纹理的默认行为。重复纹理图像。
+- GL_MIRRORED_REPEAT	和GL_REPEAT一样，但每次重复图片是镜像放置的。
+- GL_CLAMP_TO_EDGE	纹理坐标会被约束在0到1之间，超出的部分会重复纹理坐标的边缘，产生一种边缘被拉伸的效果。
+- GL_CLAMP_TO_BORDER	超出的坐标为用户指定的边缘颜色。
+<img src="F:\VS\jax-s_notebook\笔记图片\texture_wrapping.png" style="zoom:80%;" />
+
+以使用`glTexParameter*`函数对单独的一个坐标轴设置（s、t（如果是使用3D纹理那么还有一个r）他们和x、y、z是等价的）：
+```cpp
+glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
+glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
+```
+- 第一个参数指定了**纹理目标：**我们使用的是2D纹理，因此纹理目标是GL_TEXTURE_2D；
+- 第二个参数需要我们指定设置的**选项与应用的纹理轴：**我们打算配置的是WRAP选项，并且指定S和T轴；
+- 最后一个参数需要我们传递一个**环绕方式(Wrapping)，**在这个例子中OpenGL会给当前激活的纹理设定纹理环绕方式为`GL_MIRRORED_REPEAT`；
+如果我们选择 `GL_CLAMP_TO_BORDER`选项，我们还需要指定一个边缘的颜色，这需要**使用glTexParameter函数的fv后缀形式，**用GL_TEXTURE_BORDER_COLOR作为它的选项，并且传递一个float数组作为边缘的颜色值：
+```cpp
+float border[]{1.0f, 1.0f, 0.0f, 1.0f};
+glTexParameterfv(GL_TEXTURE_2D, GL_GL_CLAMP_TO_BORDER, border);
+```
+
+### 1.4.2 纹理过滤(Texture Filtering)
+纹理坐标**不依赖于分辨率(Resolution)，**他可以是任意浮点值，所以OpenGL需要知道**怎样将纹理像素(Texture Pixel，也叫Texel)映射到纹理坐标；**注意：我们不要把纹理坐标和纹理像素搞混，**纹理坐标是你给模型顶点设置的那个数组，OpenGL以这个顶点的纹理坐标数据去查找纹理图像上的像素，**然后进行采样提取纹理像素的颜色；
+
+OpenGL也有对于纹理过滤(Texture Filtering)的选项。纹理过滤有很多个选项，但是现在我们只讨论最重要的两种：GL_NEAREST和GL_LINEAR；
+- GL_NEAREST（也叫邻近过滤，Nearest Neighbor Filtering）是OpenGL默认的纹理过滤方式；当设置为GL_NEAREST的时候，**OpenGL会选择中心点最接近纹理坐标的那个像素；**下图中你可以看到四个像素，加号代表纹理坐标，左上角那个纹理像素的中心距离纹理坐标最近，所以他会被选择为样本颜色：
+<img src="F:\VS\jax-s_notebook\笔记图片\filter_nearest.png" style="zoom:80%;" />
+- GL_LINEAR（也叫线性过滤，(Bi)linear Filtering）他会**基于纹理坐标附近的纹理像素，计算出一个插值，近似出这些纹理像素之间的颜色；一个纹理像素的中心距离纹理坐标越近，那么这个纹理像素的颜色对最终的样本颜色的贡献越大；**如下图所示：
+<img src="F:\VS\jax-s_notebook\笔记图片\filter_linear.png" style="zoom:80%;" />
+
+那么这两种纹理过滤方式有怎样的视觉效果呢？让我们看看在一个很大的物体上应用一张低分辨率的纹理会发生什么吧：**GL_NEAREST产生了颗粒状的图案，我们能够清晰看到组成纹理的像素，而GL_LINEAR能够产生更平滑的图案，很难看出单个的纹理像素，GL_LINEAR可以产生更真实的输出；**
+<img src="F:\VS\jax-s_notebook\笔记图片\texture_filtering.png" style="zoom:80%;" />
+**当进行放大(Magnify)和缩小(Minify)操作的时候可以设置纹理过滤的选项：**比如你可以在纹理被缩小的时候使用邻近过滤，被放大时使用线性过滤。我们需要使用glTexParameter*函数为放大和缩小指定过滤方式；
+```cpp
+glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+```
+
+### 1.4.3 多级渐远纹理(Mipmaps)
+想象一下，假设我们有一个包含着上千物体的大房间，每个物体上都有纹理。有些物体会很远，但其纹理会拥有与近处物体同样大小的分辨率，由于远处的物体很小，所以可能只占有很少的像素片段，OpenGL从高分辨率纹理中为这些片段获取正确的颜色值就很困难，因为他需要对一个跨过纹理很大部分的片段只拾取一个纹理颜色，在小物体上这会产生不真实的感觉；
+
+OpenGL使用一种叫做**多级渐远纹理(Mipmap)**的概念来解决这个问题，他简单来说就是**一系列的纹理图像，后一个纹理图像是前一个的二分之一；**多级渐远纹理背后的理念很简单：**距观察者的距离超过一定的阈值，OpenGL会使用不同的多级渐远纹理，即最适合物体的距离的那个；**
+
+让我们看一下多级渐远纹理是什么样子的：
+<img src="F:\VS\jax-s_notebook\笔记图片\mipmaps.png" style="zoom:80%;" />
+手工为每个纹理图像创建一系列多级渐远纹理很麻烦，而OpenGL有一个`glGenerateMipmap`函数，在创建完一个纹理后调用他，OpenGL就会承担接下来的所有工作啦；
+
+在渲染中切换多级渐远纹理级别(Level)时，OpenGL在两个不同级别的多级渐远纹理层之间会产生不真实的生硬边界。你也可以在两个不同多级渐远纹理级别之间使用NEAREST和LINEAR过滤。为了指定不同多级渐远纹理级别之间的过滤方式，你可以使用下面四个选项中的一个代替原有的过滤方式：
+
+过滤方式	描述
+- GL_NEAREST_MIPMAP_NEAREST	使用最邻近的多级渐远纹理来匹配像素大小，并使用邻近插值进行纹理采样
+- GL_LINEAR_MIPMAP_NEAREST	使用最邻近的多级渐远纹理级别，并使用线性插值进行采样
+- GL_NEAREST_MIPMAP_LINEAR	在两个最匹配像素大小的多级渐远纹理之间进行线性插值，使用邻近插值进行采样
+- GL_LINEAR_MIPMAP_LINEAR	在两个邻近的多级渐远纹理之间使用线性插值，并使用线性插值进行采样
+
+一个常见的错误是，**将放大过滤的选项设置为多级渐远纹理过滤选项之一,这样没有任何效果，**因为多级渐远纹理主要是使用在纹理被缩小的情况下的：纹理放大不会使用多级渐远纹理，为放大过滤设置多级渐远纹理的选项会**产生一个GL_INVALID_ENUM错误代码；**
+
+### 1.4.4 加载与创建纹理
+使用纹理之前要做的第一件事是把它们加载到我们的应用中，纹理图像可能被储存为各种各样的文件格式，我们这里通过 stb_image.h 库来加载各种格式的图像：
+```cpp
+#define STB_IMAGE_IMPLEMENTATION // 通过定义该宏预处理器会修改头文件，让其只包含相关的函数定义源码;
+#include "stb_image.h" // 宏定义一定要放在引入头文件之前；
+// 加载图片
+int width, height, nrChannels;
+unsigned char *data = stbi_load("container.jpg", &width, &height, &nrChannels, 0);
+```
+纹理也是一个opengl对象，所以我们还是通过ID来表示一个纹理对象：
+```cpp
+unsigned int texture;
+glGenTextures(1, &texture); // 第一个参数为生成的纹理数量；
+```
+之后就像其他对象一样，我们需要**绑定他到上下文，**让之后任何的纹理指令都可以配置当前绑定的纹理：
+```cpp
+glBindTexture(GL_TEXTURE_2D, texture);
+```
+之后就可以通过前面加载的图片生成一个纹理对象啦，纹理可以通过 `glTexImage2D` 来生成：
+```cpp
+glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+glGenerateMipmap(GL_TEXTURE_2D);
+```
+下面介绍一下glTexImage2D函数的几个参数：
+- 第一个参数指定纹理目标类型，这里是2D纹理，所以会将图片加载到当前绑定到GL_TEXTURE_2D的纹理对象上，绑定到1D和3D的纹理对象不会受影响；
+- 第二个参数是指定多级渐远纹理的级别，我们可以通过逐步+1该参数来手动生成不同级别的纹理图像，这里填0表示基本级别，后面我们直接通过glGenerateMipmap来自动生成多级渐远纹理；
+- 第三个参数表示我们希望把纹理存储为何种格式，我们的图像只有RGB值，因此我们也把纹理储存为RGB值；
+- 第四个和第五个参数设置最终的纹理的宽度和高度，我们使用图像对应的大小；
+- 第六个参数一直为0，无意义，历史遗留问题；
+- 七第八个参数定义了源图的格式和存储的数据类型，我们用unsigned char存储；
+- 最后一个参数表示真正的图像数据；
+
+当调用glTexImage2D时，当前绑定的纹理对象就会被附加上纹理图像。然而，目前只有基本级别(Base-level)的纹理图像被加载了，如果要使用多级渐远纹理，我们必须手动设置所有不同的图像（不断递增第二个参数）；或者，直接在生成纹理之后调用glGenerateMipmap。这会为当前绑定的纹理自动生成所有需要的多级渐远纹理；
+
+用完图像对象之后，释放图像的内存：
+```cpp
+stbi_image_free(data);
+```
 
 
 
-gl_Position 、 gl_FragColor 等这些以 gl_ 开头的变量都是内置变量，通过给这些特殊的变量赋值，可以完成与硬件的通讯。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -482,6 +744,8 @@ gl_Position 、 gl_FragColor 等这些以 gl_ 开头的变量都是内置变量�
 # Games101
 
 齐次坐标：为了能够用一个矩阵来表示平移这种变化方式；
+
+总体流程：view->projection->view_port->rasterization
 
 ## model view transformation
 
@@ -506,8 +770,10 @@ perspective Projection
 
 mvp：model view projection model对应移动相机位置，view对应调整相机角度，projection对应将物体投影到-1，1
 
+## rasterization
 像素：pixel是picture element的简称，他是屏幕的最小单位，一个像素内部的颜色都是一致的；
-rasterlization：光栅化在德语是屏幕的意思，所以就表示将投影后的图像画到屏幕上
+rasterlization光栅化定义：光栅化在德语是屏幕的意思，所以就表示将投影后的图像画到屏幕上
+
 屏幕坐标系：屏幕左下角是原点，向上为y正方向，向右为x正方向
 opengl三维坐标系遵循左手系
 
@@ -517,13 +783,32 @@ opengl三维坐标系遵循左手系
 
 <img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250608104633.png" style="zoom:50%;" />
 
-光栅化最简单的方法：采样；采样的含义：sampling a function就是将1到100这些密集的点都输入到函数之后离散化为不同的结果
+
+三角形：任何多边形都可以通过三角形进行表示，三角形是最简单的一个多边形，所以我们看到的任何图像都是通过一个个三角形进行表示的；
+
+
+光栅化最简单的方法：采样；采样的含义：sampling a function就是将1到100这些密集的点都输入到函数之后离散化为不同的结果；例如图片的像素就是在连续的到达传感器的一些信号进行采样，将其离散化为一个个离散的像素，视频就是在时间维度进行采样，将其离散化为24个图片；
+那么光栅化中的采样就是遍历屏幕中的像素点，看其中心坐标是否在三角形内部；
 
 <img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250608104702.png" style="zoom:50%;" />
 
 <img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250608104707.png" style="zoom:50%;" />
 
 如何判断一个像素中点是否在三角形内部？用叉积；
+那一个屏幕像素很多，那我们如果遍历一整个屏幕的像素点判断其是否在三角形内部就会浪费很多时间，因为有很多像素他都离三角形很远，因此我们只需要遍历三角形的bounding box就好啦，也就是`min(x), max(x), min(y), min(y)` 这四个点组成的矩形；
 
+锯齿(jaggies)：因为一个三角形的像素都是正方形，那么光栅化最大的问题就是走样问题aliasing，如下图所示，他在边界不够平滑；
+<img src="F:\VS\jax-s_notebook\笔记图片\9643b2e8-85e2-4bf0-bdd9-7eda4ac1249a.png" style="zoom:50%;" />
 
+### 反走样antialiasing和Z-Buffering：
+sampling artifacts（采样瑕疵）：采样造成的瑕疵，下面是各种可能出现瑕疵的情况；
+- 锯齿jaggies；sampling in space
+- 摩尔纹：拿手机拍屏幕；undersampling images
+- 车轮效应wagon wheel effect； sampling in time
+原因：信号变化的速度太快，导致采样的速度跟不上；
+解决方法：
+（1）blur模糊：将三角形/信号先进行模糊化，之后再采样，这样在边界的锯齿就会好很多；
+<img src="F:\VS\jax-s_notebook\笔记图片\d1a9d351-9e0d-43a9-9023-80dc99e1755a.png" style="zoom:50%;" />
+注意：先做采样，再模糊化效果不好；
+频域：
 
