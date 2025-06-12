@@ -744,6 +744,8 @@ stbi_image_free(data);
 
 # Games101
 
+实际上图像学大致可以分为**四块：rasterization，geometry，ray tracing，animation；**
+
 齐次坐标：为了能够用一个矩阵来表示平移这种变化方式；
 
 总体流程：view->projection->view_port->rasterization
@@ -753,8 +755,6 @@ stbi_image_free(data);
 orthgraphic Projection
 
 ![](F:\VS\jax-s_notebook\笔记图片\6c7882eaa384b1640af06b7125d18e5.jpg)
-
-
 
 ![](F:\VS\jax-s_notebook\笔记图片\9d6a1ff67698be2664966f4dd289894.jpg)
 
