@@ -1473,7 +1473,9 @@ shadow mapping的问题：仅支持硬阴影，由于每个点根据是否在阴
 
 但是这类方法时间复杂度很高，一个物体假如有十万个三角形，而屏幕上每一个像素都会从光源打一根光线，那么此时就会很慢；
 
-#### 5.1.2 Accelerating method: Ray Intersection with Box
+#### 5.1.2 Accelerating method加速结构: Ray Intersection with Box
+
+##### 5.1.2.1 AABB (Axis-Aligned Bounding Box)
 
 我们可以采用和前面光栅化三角形时采用bound box类似的手段，就是**通过一个bounding volume来将一个物体圈起来，**这个bounding volume是一个任意的三维图形，**不一定是长方体，如果光线和这个bounding volume都不相交那么就不可能和里面的物体相交：**
 
@@ -1502,23 +1504,238 @@ shadow mapping的问题：仅支持硬阴影，由于每个点根据是否在阴
 
 <img src="F:\VS\jax-s_notebook\笔记图片\1749789507817.png" style="zoom:25%;" />
 
+这是AABB具体的思想，下面为不同的方法；
 
+##### 5.1.2.2 Uniform Spatial Partition(Grids)
 
+（1）预处理：首先会将整个盒子AABB**划分为多个栅格，**之后判定**哪些栅格内部包含了物体表面，在物体内部的栅格不算包含物体，**之后按照**光线传播方向按照先后顺序逐个遍历途径的栅格，**因为光线和栅格很容易判断是否相交，而和实际物体判断相交是比较困难的，所以通过栅格会排除很多情况，如果**光线途径的栅格内部存在物体的话，那么就进入判断该光线是否和该栅格内的物体存在交点，**如果栅格内不存在物体的话，那么直接跳过就好了；
 
+下面为二维的示意图：
 
+<img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250616133339.png" style="zoom:15%;" />
 
+<img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250616133350.png" style="zoom:15%;" />
 
+下面我们还要考虑一个问题，那就是应该**如何划分盒子的栅格，使其既不会太稀疏sparse也不会太密集dense，**而且考虑到有的场景**物体分布很不均匀，**比如：某个位置布满了物体，其他位置没物体，如果还按照均匀划分栅格的方式来划分bounding volume的话会需要遍历很多不存在物体的栅格，浪费大量时间，所以这种**uniform spatial partition均匀划分的方式已经很少被使用啦；**
 
+##### 5.1.2.2 Other Spatial Partition Method
 
+下面为其他优化的盒子划分方法，分别为八叉树，KD树和BSP树，KD树是三种方法最常用的方法，但是现在也被其他方法代替啦；
 
+<img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250616134133.png" style="zoom:15%;" />
 
+- 八叉树：每次都同时沿着各个轴中心砍一刀；
+- kd树：每次都只沿着一个轴砍一刀，但是每次坎的轴都不能是同一个，比如第一次沿x第二次就得沿着y而不能还是x；
 
+- bsp树：和kd树类似，只不过**不沿着轴划分，不常用；**
 
+由于kd-tree是三种方法中最常用的，所以单独拿出来介绍一下：下面是KD树的数据结构；
 
+非叶子节点：
 
+- split-axis：当前节点是沿着哪一个轴进行划分而来的，下一次划分的时候就按照其他方式进行划分；
 
+- split position：划分的位置；
+- children：孩子节点指针；
 
+叶子节点：
 
+- 该grid内部所有的物体；
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750052867898.png" style="zoom:25%;" /><img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250616134351.png" style="zoom:15%;" />
+
+kd树的建立，但是注意，这里为了方便展示，每次都只沿着一个节点砍，但是实际上每次每个叶子节点都要被砍生成新的叶子节点；
+
+kd树和B+树有些类似，因为他们都**只在叶子节点存储数据；**
+
+那么之后具体和光线的判定交点的方法为：
+
+- 首先会和根节点求交，如果**存在交点，那么会递归和他的所有子节点判断是否存在交点，**如果和某个**非叶子节点节点不存在交点，**那么就不会再继续向下递归判断啦，其中**判断的方法就是通过tmin和tmax；**
+- 直到**遍历到叶子节点**为止，之后就会和**叶子节点表示的grid里面所有的物体进行求交；**
+
+如下图所示，中间省略一些步骤：
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750053307096.png" style="zoom:25%;" /><img src="F:\VS\jax-s_notebook\笔记图片\1750053684285.png" style="zoom:25%;" />
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750053672560.png" style="zoom:25%;" />
+
+但是KD-Tree的建立并不简单，因为要**判断 物体表面的三角形mesh 和 grid是否相交是很困难的，**并且**同一个物体可能出现在多个grids里面；**
+
+下面介绍的方法就是现在最主流的方法，**不是对空间进行划分，而是对物体进行划分的；**
+
+##### 5.1.2.3 Object Partition & BVH(Bounding Volume Hierarchy)
+
+这种方式避免了一个几何结构出现在多个grid里面，唯一的缺点就是多个bounding volume可能存在相交的地方，但是这种缺点是无所谓的；
+
+具体流程：
+
+- 先把一个包围盒里的物体**划分为两个集合；**
+- 之后重新计算**两个集合的物体组成的包围盒大小；**
+- 重复前两步，**直到每个包围盒里的物体都不太多**的时候为止；
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750054383235.png" style="zoom: 33%;" />
+
+在划分的时候可能会存在一些特殊情况：应该如何划分物体呢？应该在什么时候停止划分呢？
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750054675524.png" style="zoom:25%;" />
+
+下面是BVH的数据结构，同样是一棵树，同样只有叶子节点才存储物体：
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750054776157.png" style="zoom:25%;" />
+
+这是 KD-Tree 和 BVH 二者的对比：
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750054864428.png" style="zoom:25%;" />
+
+BVH和KD-Tree求交的方法是一样的；
+
+### 5.2 Basic radiometry辐射度量学
+
+前面我们在学blinn-phong shader模型里面，光照强度是如何定义的，这里的单位是什么？这里我们就要通过辐射度量学来学习这些内容；后面我们学习的**非Whitted style的光追方法也是基于辐射度量学来实现的；**
+
+#### 5.2.1 基本概念
+
+主要学习这四个概念：`radiant flux, intensity, irradiance, radiance`；
+
+##### 5.2.1.1 radianct flux
+
+**单位时间内某个区域产生的能量：**实际上就是功率W，在光学里面就被称为**流明(lm)；**
+
+<img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250616143838.png" style="zoom:20%;" />
+
+下面是其余三个概念的示意图：
+
+<img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250616144104.png" style="zoom:33%;" />
+
+##### 5.2.1.2 radiant intensity
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750056228855.png" style="zoom:25%;" />
+
+radiant intensity：power per solid angle（一个点光源在**单位立体角方向产生的能量**）；
+
+单位立体角：因为光源是向周围360度方向发射光，而单位立体角就可以理解为**光源发射范围中的一个方向；**
+
+先看一下立体角是如何求解，之后再看单位立体角如何求解：
+
+立体角=`面积A / r^2`；一个球的立体角的就是4Π；
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750056477060.png" style="zoom:25%;" />
+
+单位/微分立体角`Differential Solid Angle`：只在极坐标角度变化一点之后和原来坐标形成的 四边形面积 / r^2，公式为下图：
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750057455700.png" style="zoom:25%;" />
+
+radiant intensity就是一个单位立体角方向上所产生的能量：也就是光源在四周产生的所有能量 power/4Π
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750057011470.png" style="zoom:33%;" />
+
+##### 5.2.1.3 Irradiance
+
+Irradiance：power per projected unit area（**投影后**物体表面单位面积接收到的能量）
+
+**注意：irradiance的面积大小计算是按照垂直光源方向投影之后的面积；**
+
+<img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250616150554.png" style="zoom:15%;" />
+
+<img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250616150600.jpg" style="zoom:25%;" />
+
+学完这个我们可以回忆一下，之前的**blinn-phong模型在计算光照强度**的时候是需要看光源和物体表面法线的夹角的，夹角越小能量衰减越小，这就是因为要**按照投影之后的面积计算irrandiance；**
+
+<img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250616151125.png" style="zoom:15%;" />
+
+以及前面所讲的`blinn-phong`中的**Light Falloff，**距离光源**越远的球壳上的点他的能量越小，从而越暗；**
+
+##### 5.2.1.4 radiance
+
+radiance：power per unit solid angle, per projected unit area（单位投影面积沿着单位立体角方向产生的能量）；
+
+<img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250616151426.png" style="zoom:25%;" />
+
+需要微分两次，考虑起始位置为单位面积，在单位立体角方向的能量；
+
+将radiance和前面的 irradiance 和 intensity建立起联系：
+
+lrradiance: power per projected unit area -> Radiance: lrradiance per solid angle
+
+Intensity: power per solid angle -> Radiance: Intensity per projected unit area
+
+![](F:\VS\jax-s_notebook\笔记图片\微信图片_20250616151838.png)
+
+换个方式考虑，其实radiance就是**在irradiance的基础上加了个进入光范围的限制，**irradiance是单位面积接收到周围任意方向光的总能量，但是radiance是单位面积接收到单位立体角范围方向内的光的总能量；
+
+除此之外radiance根据**光线传播方向**的不同，既可以表示**从单位立体角的光线进入物体单位投影面积表面的光的能量（incident radiance），也可以表示从物体单位面积表面沿单位立体角出去的光的能量（exiting radiance）；**
+
+<img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250616152003.png" style="zoom:15%;" />
+
+<img src="F:\VS\jax-s_notebook\笔记图片\微信图片_20250616152007.png" style="zoom:15%;" />
+
+其实也可以**将 irradiance 理解为来自四面八方的 radiance 积分起来；**
+
+#### 5.2.2 BRDF
+
+`BRDF: Bidirectional Reflectance Distribution Function`
+
+在描述**反射的时候，我们需要用一种方程来对其进行描述，**那如何进行描述呢？
+
+可以通过**光线从某一个方向进来，并且反射到某一个方向去，这个过程产生的能量**是多少，这就是BRDF做的事情；
+
+反射可以理解为**从某个方向进入物体表面的光被物体吸收了，之后物体还需要将这些能量发散出去，**这种理解方式就可以**通过 irradiance 和 radiance来描述；**
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750059181016.png" style="zoom:33%;" />
+
+BRDF描述的过程：**如何 从一个单位立体角方向照射到物体微小面积表面的irradiance 计算出 反射到某一单位立体角方向的radiance；**因为**入射方向的光是一条，但是由于漫反射（镜面反射就是入射光能量等于出射光能量）会将入射的irradiance会被平均地分散到各个方向的反射光，**每一条光的能量 radiance大致可以理解为`1/irradiance`，所以就是下面的公式；
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750059542007.png" style="zoom:33%;" />
+
+**反射方程`reflection equation`：**可以理解为**所有入射到着色点的光（不止来自光源，还有来自其他物体表面的的反射光）做出的贡献的总和，所以这里存在递归recursive；**
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750059816296.png" style="zoom:25%;" />
+
+**渲染方程`rendering equation`：**就是**在我们人眼看来，从某个着色点发出的光的颜色/能量，渲染方程就是在反射方程的基础上，在引入一部分，**就是有的物体本身就是发光的物体，所以我们**在渲染的时候需要在反射光的基础上，加上物体本身发的光；**
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750060287121.png" style="zoom: 33%;" />
+
+这个渲染方程很general：**所有限制在物体表面的光线传播都满足该渲染方程；**
+
+下面的图片很好的描绘了渲染方程：第一个图片描绘的渲染方程：反射出的能量 = 物体自身的发光 +(所有点光源的发光*BRDF)；第二个图片进一步考虑光源包括面光源的情况：面光源其实就可以考虑为一堆点光源组成，从而通过积分的方式就可以表示；第三个图片又引入了来自周围物体的反射光，从而就是真正的rendering equation的表示：
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750060711858.png" style="zoom: 50%;" />
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750060820670.png" style="zoom:50%;" />
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750060836151.png" style="zoom:50%;" />
+
+下面就要介绍如何解这个渲染方程，也就是怎么把L解出来：
+
+将上面的rendering equation经过一系列的转换可以变为下面的公式，**是一个线性的形式，K表示反射一次的操作；**
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750061554304.png" style="zoom: 33%;" />
+
+再经过一系列的展开可以得到下面的形式：
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750061688617.png" style="zoom:33%;" />
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750061830989.png" style="zoom: 50%;" />
+
+上面就包括：**自身发光+直接的光源（包括阴影）+ 其他物体经过一次反射弹射过来的光 + ...二次... + ...n次...**
+
+**全局光照：就是直接光照和所有间接光照的集合；**
+
+看上面的公式可能还会有疑惑，**既然KE表示直接光源，为什么还需要乘上K呢，**原因就是这个公式是**站在人眼的角度来描述的，也就是即使是直接光源找到物体表面，那他也会反射一次到达人眼，所以要比光线打在物体表面上的次数多一次反射；**
+
+那么对于**光栅化的渲染方式，可以比较容易计算出E和KE，也就是物体本身发的光和直接光源打在物体表面上的反射光，**但是其他反射多次的光就非常难以计算，而**光线追踪就能够很方便地计算出来；**
+
+下面为考虑不同弹射次数的渲染结果：
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750062511328.png" style="zoom:33%;" />
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750062518888.png" style="zoom:33%;" />
+
+<img src="F:\VS\jax-s_notebook\笔记图片\1750062525631.png" style="zoom:33%;" />
+
+我们还要注意一点，就是最上面的灯，可以看到当考虑弹射三次的情况时，灯是全黑的，当我们考虑弹射五次的情况灯就已经亮啦，这是因为**对于一些材质而言，比如：双层玻璃，他进入就需要弹射很多次，当只考虑弹射三次，他反射的光根本就没出来，所以才是黑色的，直到他出来就立马很亮啦；**
+
+当我们设置**弹射次数无限大时，他就会收敛到一个亮度而不会过曝，**但是当我们**一直按着快门，也就是时间很长，那么能量就会一直增大，这种情况才会产生过曝**的现象；
 
 
 
